@@ -1,11 +1,41 @@
-build:
+build-base:
   box: golang:1.7
-  base-path: /go/src/github.com/wercker/cooltimeclient
+  base-path: /go/src/github.com/wercker/cooltime
   steps:
     - script:
         name: install govendor
         code: go get -u github.com/kardianos/govendor
+    - script:
+        name: install dependencies
+        code: govendor sync
+    - script:
+        name: move deps to root and prune
+        code: |
+          # lazy man's merge, will fail if we add a wercker dependency
+          # mv ./vendor/github.com/* /go/src/github.com/
+          # rm -rf ./vendor/github.com
+          mv ./vendor/* /go/src/
+          rm -rf /go/src/github.com/wercker/cooltimeclient
+          rm -rf /pipeline
+    - internal/docker-push:
+        username: $DOCKER_USER
+        password: $DOCKER_PASSWORD
+        repository: quay.io/wercker/cooltimeclient
+        registry: https://quay.io
+        tag: $WERCKER_GIT_BRANCH-base
 
+build:
+  box:
+    id: quay.io/wercker/cooltimeclient:$WERCKER_GIT_BRANCH-base
+    username: $DOCKER_USER
+    password: $DOCKER_PASSWORD
+    registry: https://quay.io
+
+  base-path: /go/src/github.com/wercker/cooltimeclient
+  steps:
+    # - script:
+    #     name: install govendor
+    #     code: go get -u github.com/kardianos/govendor
 
     # - script:
     #     name: go vet
@@ -18,7 +48,9 @@ build:
 
     - script:
         name: install dependencies
-        code: govendor sync
+        code: |
+          govendor update +external
+          govendor sync
 
     - script:
         name: compile
@@ -26,4 +58,34 @@ build:
             export CGO_ENABLED=0
             GOOS=linux GOARCH=amd64 go build \
             -ldflags="-X github.com/wercker/cooltimeclient.GitCommit=$WERCKER_GIT_COMMIT -X github.com/wercker/cooltimeclient.PatchVersion=$(( ($(date +%s) - $(date --date=20150101 +%s) )/(60*60*24) )) -X github.com/wercker/cooltimeclient.Compiled=$(date +%s)" \
-              -o "$WERCKER_OUTPUT_DIR/latest/linux_amd64/sentcli"
+              -o "$WERCKER_OUTPUT_DIR/cooltimeclient"
+
+integrate-head:
+  box:
+    id: alpine:3.4
+    cmd: /bin/sh
+  services:
+    - mongo:3.2
+    - name: coolserver
+      id: quay.io/wercker/cooltime:master
+      username: $DOCKER_USER
+      password: $DOCKER_PASSWORD
+      registry: https://quay.io
+      cmd: server --mongo mongodb://mongo:27017
+    - name: coolgateway
+      id: quay.io/wercker/cooltime:master
+      username: $DOCKER_USER
+      password: $DOCKER_PASSWORD
+      registry: https://quay.io
+      cmd: gateway --host coolserver:49104
+
+  steps:
+    - script:
+        name: test client against gateway/server
+        code: |
+          ./cooltimeclient --auth foo --endpoint http://coolgateway:49105/api/v3/cooltime/add add heyo
+    # - internal/shell:
+    #     cmd: /bin/sh
+
+
+

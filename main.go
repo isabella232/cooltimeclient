@@ -14,20 +14,11 @@ var (
 	addCommand = cli.Command{
 		Name:  "add",
 		Usage: "add some cool",
-		Subcommands: []cli.Command{
-			cli.Command{
-				Name:  "add",
-				Usage: "add some cool",
-				Action: func(c *cli.Context) {
-					cool := c.Args().First()
-					authToken := c.String("auth")
-					endpoint := c.String("endpoint")
-					AddCool(endpoint, authToken, cool)
-				},
-				Flags: []cli.Flag{
-					cli.StringFlag{Name: "auth"},
-					cli.StringFlag{Name: "endpoint"}},
-			},
+		Action: func(c *cli.Context) {
+			cool := c.Args().First()
+			authToken := c.GlobalString("auth")
+			endpoint := c.GlobalString("endpoint")
+			AddCool(endpoint, authToken, cool)
 		},
 	}
 )
@@ -42,13 +33,18 @@ type AddResponse struct {
 }
 
 func AddCool(endpoint, auth, cool string) {
-	jsonB := []byte(fmt.Sprintf(`{"authToken": "%s", "coolThing": "%s"`, auth, cool))
+	jsonB := []byte(fmt.Sprintf(`{"authToken": "%s", "coolThing": "%s"}`, auth, cool))
 	resp, err := http.Post(endpoint, "application/json", bytes.NewBuffer(jsonB))
 	if err != nil {
 		fmt.Printf("Error: %s\n", err.Error())
 		return
 	}
 
+	// b, err := ioutil.ReadAll(resp.Body)
+	// if err != nil {
+	//   fmt.Println(err.Error())
+	// }
+	// fmt.Println(string(b))
 	dec := json.NewDecoder(resp.Body)
 	var data AddResponse
 	err = dec.Decode(&data)
@@ -74,6 +70,10 @@ func main() {
 	app.Version = FullVersion()
 	app.Commands = []cli.Command{
 		addCommand,
+	}
+	app.Flags = []cli.Flag{
+		cli.StringFlag{Name: "auth"},
+		cli.StringFlag{Name: "endpoint"},
 	}
 
 	app.Run(os.Args)
